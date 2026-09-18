@@ -1,0 +1,347 @@
+syntax = "proto3";
+
+package qc.meta.v1;
+
+option go_package = "qc-meta-service/gen/qc/meta/v1;metav1";
+option java_multiple_files = true;
+option java_package = "com.boke.qcmeta.grpc.v1";
+option java_outer_classname = "QcMetaProto";
+
+import "google/protobuf/timestamp.proto";
+
+enum RecipientType {
+  RECIPIENT_TYPE_UNSPECIFIED = 0;
+  RECIPIENT_TYPE_PHONE = 1;
+  RECIPIENT_TYPE_BSUID = 2;
+}
+
+enum DeliveryMode {
+  DELIVERY_MODE_UNSPECIFIED = 0;
+  DELIVERY_MODE_ASYNC = 1;
+  DELIVERY_MODE_DIRECT = 2;
+}
+
+enum MessageKind {
+  MESSAGE_KIND_UNSPECIFIED = 0;
+  MESSAGE_KIND_TEXT = 1;
+  MESSAGE_KIND_TEMPLATE = 2;
+  MESSAGE_KIND_IMAGE = 3;
+  MESSAGE_KIND_VIDEO = 4;
+  MESSAGE_KIND_AUDIO = 5;
+  MESSAGE_KIND_DOCUMENT = 6;
+  MESSAGE_KIND_STICKER = 7;
+  MESSAGE_KIND_LOCATION = 8;
+  MESSAGE_KIND_INTERACTIVE = 9;
+  MESSAGE_KIND_CONTACTS = 10;
+  MESSAGE_KIND_REACTION = 11;
+}
+
+enum MessageState {
+  MESSAGE_STATE_UNSPECIFIED = 0;
+  MESSAGE_STATE_PENDING = 1;
+  MESSAGE_STATE_SUBMITTING = 2;
+  MESSAGE_STATE_ACCEPTED = 3;
+  MESSAGE_STATE_SENT = 4;
+  MESSAGE_STATE_DELIVERED = 5;
+  MESSAGE_STATE_READ = 6;
+  MESSAGE_STATE_FAILED = 7;
+  MESSAGE_STATE_UNKNOWN = 8;
+  MESSAGE_STATE_CANCELLED = 9;
+  MESSAGE_STATE_RETRY_WAIT = 10;
+}
+
+message TextContent {
+  string body = 1;
+  bool preview_url = 2;
+}
+
+message MediaContent {
+  string id = 1;
+  string link = 2;
+  string caption = 3;
+  string filename = 4;
+  string asset_id = 5;
+}
+
+message TemplateParameter {
+  string type = 1;
+  string text = 2;
+  string media_id = 3;
+  string link = 4;
+  string payload = 5;
+  string coupon_code = 6;
+  LocationContent location = 7;
+  string asset_id = 8;
+  string parameter_name = 9;
+  string currency_json = 10;
+  string date_time_json = 11;
+}
+
+message TemplateComponent {
+  string type = 1;
+  string sub_type = 2;
+  int32 index = 3;
+  repeated TemplateParameter parameters = 4;
+}
+
+message TemplateContent {
+  string name = 1;
+  string language_code = 2;
+  repeated TemplateComponent components = 3;
+}
+
+message LocationContent {
+  double latitude = 1;
+  double longitude = 2;
+  string name = 3;
+  string address = 4;
+}
+
+message ReactionContent {
+  string message_id = 1;
+  string emoji = 2;
+}
+
+message JsonContent {
+  // interactive 和 contacts 的结构较多。第一版保留经过校验的 JSON，
+  // 避免为了少量场景建立大量只使用一次的消息类型。
+  string json = 1;
+}
+
+message MessageContent {
+  MessageKind kind = 1;
+  oneof value {
+    TextContent text = 2;
+    TemplateContent template = 3;
+    MediaContent media = 4;
+    LocationContent location = 5;
+    ReactionContent reaction = 6;
+    JsonContent structured = 7;
+  }
+  string reply_to_whatsapp_message_id = 8;
+  string reply_to_message_id = 9;
+}
+
+message SubmitMessageRequest {
+  string send_request_id = 1;
+  string business_id = 2;
+  string sender_id = 3;
+  string customer_id = 4;
+  RecipientType recipient_type = 5;
+  string recipient = 6;
+  DeliveryMode delivery_mode = 7;
+  MessageContent content = 8;
+  google.protobuf.Timestamp send_at = 9;
+  // 退订和黑名单由调用方提交前判断；省略时为 false，显式值仅透传给 YCloud。
+  optional bool filter_unsubscribed = 10;
+  optional bool filter_blocked = 11;
+  string source_id = 12;
+  // 调用方提供本次发送信息；本服务不维护号码或账号绑定。
+  string sender_phone = 13;
+  string waba_id = 14;
+}
+
+message SubmitMessageResponse {
+  string message_id = 1;
+  MessageState state = 2;
+  google.protobuf.Timestamp accepted_at = 3;
+  bool duplicated_request = 4;
+}
+
+message GetMessageRequest {
+  string message_id = 1;
+  string business_id = 2;
+}
+
+message GetMessageByRequestRequest { string business_id = 1; string send_request_id = 2; }
+
+message Message {
+  string message_id = 1;
+  string send_request_id = 2;
+  string business_id = 3;
+  string sender_id = 4;
+  string customer_id = 5;
+  RecipientType recipient_type = 6;
+  string recipient = 7;
+  MessageKind kind = 8;
+  DeliveryMode delivery_mode = 9;
+  MessageState state = 10;
+  string provider_message_id = 11;
+  string whatsapp_message_id = 12;
+  string last_error_code = 13;
+  string last_error_message = 14;
+  google.protobuf.Timestamp accepted_at = 15;
+  google.protobuf.Timestamp submitted_at = 16;
+  google.protobuf.Timestamp sent_at = 17;
+  google.protobuf.Timestamp delivered_at = 18;
+  google.protobuf.Timestamp read_at = 19;
+  google.protobuf.Timestamp failed_at = 20;
+  string sender_phone = 21;
+  string waba_id = 22;
+}
+
+service MessageService {
+  rpc SubmitMessage(SubmitMessageRequest) returns (SubmitMessageResponse);
+  rpc GetMessage(GetMessageRequest) returns (Message);
+  rpc GetMessageByRequest(GetMessageByRequestRequest) returns (Message);
+  rpc ReconcileMessage(GetMessageRequest) returns (Message);
+}
+
+message CampaignRecipient {
+  string recipient_id = 1;
+  string customer_id = 2;
+  RecipientType recipient_type = 3;
+  string recipient = 4;
+  repeated TemplateComponent components = 5;
+  string template_name = 6;
+  string language_code = 7;
+}
+
+message CreateCampaignRequest {
+  string campaign_id = 1;
+  string business_id = 2;
+  string sender_id = 3;
+  string name = 4;
+  string template_name = 5;
+  string language_code = 6;
+  repeated CampaignRecipient recipients = 7;
+  google.protobuf.Timestamp send_at = 8;
+  // 与单条消息一致：不读取全局过滤配置，省略时为 false。
+  optional bool filter_unsubscribed = 9;
+  optional bool filter_blocked = 10;
+  string source_id = 11;
+  string sender_phone = 12;
+  string waba_id = 13;
+}
+
+message Campaign {
+  string campaign_id = 1;
+  string business_id = 2;
+  string sender_id = 3;
+  string name = 4;
+  string state = 5;
+  int32 total = 6;
+  int32 pending = 7;
+  int32 accepted = 8;
+  int32 delivered = 9;
+  int32 read = 10;
+  int32 failed = 11;
+  int32 unknown = 12;
+  int32 cancelled = 13;
+  google.protobuf.Timestamp created_at = 14;
+  int32 submitting=15; int32 sent=16; int32 processed=17; bool task_finished=18; bool duplicated_request=19;
+}
+
+message GetCampaignRequest {
+  string campaign_id = 1;
+  string business_id = 2;
+}
+
+message CancelCampaignRequest {
+  string campaign_id = 1;
+  string business_id = 2;
+}
+
+service CampaignService {
+  rpc CreateCampaign(CreateCampaignRequest) returns (Campaign);
+  rpc GetCampaign(GetCampaignRequest) returns (Campaign);
+  rpc CancelCampaign(CancelCampaignRequest) returns (Campaign);
+}
+
+message ServiceEvent {
+  int64 sequence = 1;
+  string event_id = 2;
+  string event_type = 3;
+  string business_id = 4;
+  string sender_id = 5;
+  string entity_id = 6;
+  string payload_json = 7;
+  google.protobuf.Timestamp occurred_at = 8;
+}
+
+message ListEventsRequest {
+  string business_id = 3;
+  int64 after_sequence = 1;
+  int32 limit = 2;
+}
+
+message ListEventsResponse {
+  repeated ServiceEvent events = 1;
+}
+
+message AckEventsRequest {
+  repeated int64 sequences = 1;
+}
+
+message AckEventsResponse {
+  int32 acknowledged = 1;
+}
+
+service EventService {
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse);
+  rpc AckEvents(AckEventsRequest) returns (AckEventsResponse);
+  rpc PullEvents(PullEventsRequest) returns (EventBatch);
+  rpc ConfirmEvents(ConfirmEventsRequest) returns (AckEventsResponse);
+  rpc ReplayEvents(ReplayEventsRequest) returns (AckEventsResponse);
+}
+
+message PullEventsRequest { string business_id = 1; string consumer_id = 2; int32 limit = 3; }
+message EventBatch { string lease_token = 1; google.protobuf.Timestamp leased_until = 2; repeated ServiceEvent events = 3; }
+message ConfirmEventsRequest { string business_id = 1; string consumer_id = 2; string lease_token = 3; repeated int64 sequences = 4; }
+message ReplayEventsRequest { string business_id = 1; repeated int64 sequences = 2; }
+
+// 仅在可信内网调用；素材接口继续校验已存资源的业务归属。
+service AssetService {
+  rpc UploadAsset(UploadAssetRequest) returns (Asset);
+  rpc GetAsset(GetAssetRequest) returns (Asset);
+  rpc RetryAsset(GetAssetRequest) returns (Asset);
+  rpc UploadAssetToYCloud(GetAssetRequest) returns (Asset);
+}
+message UploadAssetRequest {
+  string business_id = 1; string sender_id = 2; string filename = 3;
+  string mime_type = 4; bytes content = 5; int32 directory_type = 6; string sender_phone = 7;
+}
+message GetAssetRequest { string business_id = 1; string asset_id = 2; }
+message Asset {
+  string asset_id = 1; string business_id = 2; string sender_id = 3;
+  string status = 4; string filename = 5; string mime_type = 6; int64 size_bytes = 7;
+  string url = 8; string provider_media_id = 9; google.protobuf.Timestamp provider_expires_at = 10;
+  string inbound_message_id = 11; string error_code = 12;
+  google.protobuf.Timestamp created_at = 13; google.protobuf.Timestamp updated_at = 14;
+  string sender_phone = 15;
+}
+// 管理与模板查询均通过内网直接调用，无需额外鉴权 metadata。
+service ManagementService {
+  rpc UpdatePhoneDisplayName(UpdatePhoneDisplayNameRequest) returns (ManagementJson);
+  rpc ListWabas(ManagementPageRequest) returns (ManagementJson);
+  rpc GetWaba(WabaKey) returns (ManagementJson);
+  rpc ListPhoneNumbers(PhoneListRequest) returns (ManagementJson);
+  rpc GetPhoneNumber(PhoneKey) returns (ManagementJson);
+  rpc RegisterPhoneNumber(RegisterPhoneRequest) returns (ManagementJson);
+  rpc GetPhoneProfile(PhoneKey) returns (ManagementJson);
+  rpc UpdatePhoneProfile(UpdatePhoneProfileRequest) returns (ManagementJson);
+  rpc ListTemplates(TemplateListRequest) returns (ManagementJson);
+  rpc GetTemplate(TemplateKey) returns (ManagementJson);
+  rpc CreateTemplate(WriteTemplateRequest) returns (ManagementJson);
+  rpc UpdateTemplate(WriteTemplateRequest) returns (ManagementJson);
+  rpc DeleteTemplate(TemplateKey) returns (ManagementJson);
+}
+message UpdatePhoneDisplayNameRequest { PhoneKey key = 1; string new_name = 2; }
+service TemplateCatalogService {
+  rpc ListUsableTemplates(UsableTemplatesRequest) returns (ManagementJson);
+  rpc GetUsableTemplate(UsableTemplateRequest) returns (ManagementJson);
+}
+// JSON 保留 YCloud 完整模板组件和号码资料，不丢失平台新增字段；详见接口说明。
+message ManagementJson { string json = 1; }
+message ManagementPageRequest { int32 page = 1; int32 limit = 2; }
+message WabaKey { string waba_id = 1; }
+message PhoneListRequest { string waba_id = 1; int32 page = 2; int32 limit = 3; }
+message PhoneKey { string waba_id = 1; string phone_number = 2; }
+// register 的上游路径虽然名为 phoneNumber，官方定义实际要求号码 ID。
+message RegisterPhoneRequest { string waba_id = 1; string phone_number_id = 2; }
+message UpdatePhoneProfileRequest { PhoneKey key = 1; string profile_json = 2; }
+message TemplateKey { string waba_id = 1; string name = 2; string language = 3; }
+message TemplateListRequest { string waba_id = 1; int32 page = 2; int32 limit = 3; string name = 4; string language = 5; string status = 6; }
+message WriteTemplateRequest { TemplateKey key = 1; string category = 2; optional int32 message_send_ttl_seconds = 3; string components_json = 4; string sub_category = 5; optional bool cta_url_link_tracking_opted_out = 6; }
+message UsableTemplatesRequest { reserved 1, 2; reserved "business_id", "sender_id"; int32 page = 3; int32 limit = 4; string waba_id = 5; }
+message UsableTemplateRequest { reserved 1, 2; reserved "business_id", "sender_id"; string name = 3; string language = 4; string waba_id = 5; }

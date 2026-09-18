@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.boke.qcmeta.mapper.AssetMapper">
+  <!-- 数据库字段独立命名，显式映射以保持现有接口字段。 -->
+  <resultMap id="assetRecord" type="com.boke.qcmeta.media.AssetService$Asset" autoMapping="false">
+    <constructor>
+      <arg name="assetId" column="asset_id" javaType="java.lang.String"/>
+      <arg name="businessId" column="business_id" javaType="java.lang.String"/>
+      <arg name="senderId" column="sender_id" javaType="java.lang.String"/>
+      <arg name="status" column="status" javaType="java.lang.String"/>
+      <arg name="filename" column="filename" javaType="java.lang.String"/>
+      <arg name="mimeType" column="mime_type" javaType="java.lang.String"/>
+      <arg name="sizeBytes" column="size_bytes" javaType="_long"/>
+      <arg name="url" column="url" javaType="java.lang.String"/>
+      <arg name="providerMediaId" column="provider_media_id" javaType="java.lang.String"/>
+      <arg name="providerExpiresAt" column="provider_expire_date" javaType="java.time.Instant"/>
+      <arg name="inboundMessageId" column="inbound_message_id" javaType="java.lang.String"/>
+      <arg name="errorCode" column="error_code" javaType="java.lang.String"/>
+      <arg name="createdAt" column="create_date" javaType="java.time.Instant"/>
+      <arg name="updatedAt" column="update_date" javaType="java.time.Instant"/>
+      <arg name="senderPhone" column="sender_phone" javaType="java.lang.String"/>
+    </constructor>
+  </resultMap>
+  <sql id="assetColumns">asset_id,business_id,sender_id,status,filename,mime_type,size_bytes,url,provider_media_id,
+provider_expire_date,COALESCE(inbound_message_id,'') AS inbound_message_id,error_code,create_date,update_date,sender_phone</sql>
+  <insert id="insertUpload">
+    INSERT INTO assets(asset_id,business_id,sender_id,status,filename,mime_type,size_bytes,object_key,url,sender_phone)
+                VALUES(#{asset.assetId},#{asset.businessId},#{asset.senderId},'READY',#{asset.filename},#{asset.mimeType},#{asset.sizeBytes},#{asset.objectKey},#{asset.url},#{asset.senderPhone})
+  </insert>
+
+  <select id="find" resultMap="com.boke.qcmeta.mapper.AssetMapper.assetRecord">
+    SELECT <include refid="assetColumns"/> FROM assets WHERE business_id=#{businessId} AND asset_id=#{assetId}
+  </select>
+
+  <update id="retry">
+    UPDATE assets SET status='PENDING',error_code='',claim_id=NULL,lock_expire_date=NULL,update_date=CURRENT_TIMESTAMP
+            WHERE business_id=#{businessId} AND asset_id=#{assetId} AND status='FAILED'
+  </update>
+
+  <select id="objectKey" resultType="string">
+    SELECT object_key FROM assets WHERE asset_id=#{assetId}
+  </select>
+
+  <update id="setProvider">
+    UPDATE assets SET provider_media_id=#{change.mediaId},provider_expire_date=#{change.expiresAt},update_date=CURRENT_TIMESTAMP
+            WHERE business_id=#{change.businessId} AND asset_id=#{change.assetId}
+  </update>
+
+<update id="completeDownload">
+    UPDATE assets SET status='READY',object_key=#{asset.objectKey},url=#{asset.url},size_bytes=#{asset.sizeBytes},error_code='',
+                            claim_id=NULL,lock_expire_date=NULL,update_date=CURRENT_TIMESTAMP
+                        WHERE asset_id=#{asset.assetId} AND claim_id=#{asset.claimId} AND status='DOWNLOADING'
+  </update>
+
+  <update id="failDownload">
+    UPDATE assets SET status='FAILED',error_code=#{code},claim_id=NULL,lock_expire_date=NULL,update_date=CURRENT_TIMESTAMP
+                        WHERE asset_id=#{assetId} AND claim_id=#{claimId} AND status='DOWNLOADING'
+  </update>
+
+  <select id="lockPending" resultMap="com.boke.qcmeta.mapper.AssetMapper.assetRecord">
+    SELECT <include refid="assetColumns"/> FROM assets
+WHERE status='PENDING' OR (status='DOWNLOADING' AND lock_expire_date &lt; CURRENT_TIMESTAMP) ORDER BY create_date LIMIT 1 FOR UPDATE SKIP LOCKED
+  </select>
+
+  <update id="claim">
+    UPDATE assets SET status='DOWNLOADING',claim_id=#{claimId},lock_expire_date=#{until},
+                    attempt_count=attempt_count+1,update_date=CURRENT_TIMESTAMP WHERE asset_id=#{assetId}
+  </update>
+
+  <select id="sourceUrl" resultType="string">
+    SELECT source_url FROM assets WHERE asset_id=#{assetId}
+  </select>
+
+  <insert id="insertEvent">
+    INSERT INTO event_outbox(event_id,event_type,business_id,sender_id,entity_id,payload,occurred_date)
+            VALUES(#{event.eventId},#{event.eventType},#{event.businessId},#{event.senderId},#{event.entityId},#{event.payload},CURRENT_TIMESTAMP)
+  </insert>
+</mapper>

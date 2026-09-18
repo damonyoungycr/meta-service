@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.boke.qcmeta.mapper.MessageMapper">
+  <!-- 数据库字段独立命名，显式映射以保持现有接口字段。 -->
+  <resultMap id="messageRecord" type="com.boke.qcmeta.model.StoreModels$MessageRecord" autoMapping="false">
+    <constructor>
+      <arg name="messageId" column="message_id" javaType="java.lang.String"/>
+      <arg name="sendRequestId" column="send_request_id" javaType="java.lang.String"/>
+      <arg name="businessId" column="business_id" javaType="java.lang.String"/>
+      <arg name="senderId" column="sender_id" javaType="java.lang.String"/>
+      <arg name="customerId" column="customer_id" javaType="java.lang.String"/>
+      <arg name="recipientType" column="recipient_type" javaType="java.lang.String"/>
+      <arg name="recipient" column="recipient" javaType="java.lang.String"/>
+      <arg name="messageKind" column="message_kind" javaType="java.lang.String"/>
+      <arg name="deliveryMode" column="delivery_mode" javaType="java.lang.String"/>
+      <arg name="content" column="message_content" javaType="com.fasterxml.jackson.databind.JsonNode" typeHandler="com.boke.qcmeta.mapper.type.JsonNodeTypeHandler"/>
+      <arg name="campaignId" column="campaign_id" javaType="java.lang.String"/>
+      <arg name="campaignRecipientId" column="campaign_recipient_id" javaType="java.lang.String"/>
+      <arg name="state" column="state" javaType="java.lang.String"/>
+      <arg name="filterUnsubscribed" column="filter_unsubscribed" javaType="_boolean"/>
+      <arg name="filterBlocked" column="filter_blocked" javaType="_boolean"/>
+      <arg name="sendAt" column="send_date" javaType="java.time.Instant"/>
+      <arg name="nextAttemptAt" column="next_attempt_date" javaType="java.time.Instant"/>
+      <arg name="attemptCount" column="attempt_count" javaType="_int"/>
+      <arg name="providerMessageId" column="provider_message_id" javaType="java.lang.String"/>
+      <arg name="whatsappMessageId" column="whatsapp_message_id" javaType="java.lang.String"/>
+      <arg name="lastErrorCode" column="last_error_code" javaType="java.lang.String"/>
+      <arg name="lastErrorMessage" column="last_error_message" javaType="java.lang.String"/>
+      <arg name="acceptedAt" column="accepted_date" javaType="java.time.Instant"/>
+      <arg name="submittedAt" column="submitted_date" javaType="java.time.Instant"/>
+      <arg name="sentAt" column="sent_date" javaType="java.time.Instant"/>
+      <arg name="deliveredAt" column="delivered_date" javaType="java.time.Instant"/>
+      <arg name="readAt" column="read_date" javaType="java.time.Instant"/>
+      <arg name="failedAt" column="failed_date" javaType="java.time.Instant"/>
+      <arg name="senderPhone" column="sender_phone" javaType="java.lang.String"/>
+      <arg name="wabaId" column="waba_id" javaType="java.lang.String"/>
+    </constructor>
+  </resultMap>
+  <sql id="messageSelect">SELECT message_id,send_request_id,business_id,sender_id,customer_id,
+                    recipient_type,recipient,message_kind,delivery_mode,message_content,campaign_id,
+                    campaign_recipient_id,state,filter_unsubscribed,filter_blocked,send_date,
+                    next_attempt_date,attempt_count,provider_message_id,whatsapp_message_id,
+                    last_error_code,last_error_message,accepted_date,submitted_date,sent_date,
+                    delivered_date,read_date,failed_date,sender_phone,waba_id
+                FROM outbound_messages</sql>
+  <insert id="insertOutbox">
+    INSERT INTO mq_outbox(message_id,state,next_publish_date,publish_priority) VALUES(#{message.messageId},'NEW',#{message.sendAt},CASE WHEN #{message.campaignId} IS NULL THEN 100 ELSE 0 END)
+  </insert>
+
+  <sql id="insertMessageColumns">
+    INSERT INTO outbound_messages(
+                    message_id,send_request_id,business_id,sender_id,customer_id,
+                    recipient_type,recipient,message_kind,delivery_mode,message_content,
+                    campaign_id,campaign_recipient_id,state,filter_unsubscribed,filter_blocked,
+                    send_date,next_attempt_date,request_fingerprint,source_id,sender_phone,waba_id)
+  </sql>
+  <sql id="insertMessageValues">
+    (#{message.messageId},#{message.sendRequestId},#{message.businessId},#{message.senderId},COALESCE(#{message.customerId},''),#{message.recipientType},#{message.recipient},#{message.messageKind},#{message.deliveryMode},#{message.content},NULLIF(#{message.campaignId},''),NULLIF(#{message.campaignRecipientId},''),'PENDING',#{message.filterUnsubscribed},#{message.filterBlocked},#{message.sendAt},#{message.sendAt},#{message.requestFingerprint},COALESCE(#{message.sourceId},''),#{message.senderPhone},#{message.wabaId})
+  </sql>
+  <insert id="insertMessage">
+    <include refid="insertMessageColumns"/> VALUES <include refid="insertMessageValues"/>
+  </insert>
+  <insert id="insertMessages">
+    <include refid="insertMessageColumns"/> VALUES
+    <foreach collection="messages" item="message" separator=","><include refid="insertMessageValues"/></foreach>
+  </insert>
+  <insert id="insertOutboxes">
+    INSERT INTO mq_outbox(message_id,state,next_publish_date,publish_priority) VALUES
+    <foreach collection="messages" item="message" separator=",">(#{message.messageId},'NEW',#{message.sendAt},CASE WHEN #{message.campaignId} IS NULL THEN 100 ELSE 0 END)</foreach>
+  </insert>
+
+  <select id="findByRequest" resultMap="com.boke.qcmeta.mapper.MessageMapper.messageRecord">
+    <include refid="messageSelect"/> WHERE business_id=#{businessId} AND send_request_id=#{requestId}
+  </select>
+
+  <select id="fingerprint" resultType="string">
+    SELECT request_fingerprint FROM outbound_messages WHERE message_id=#{messageId}
+  </select>
+
+  <select id="lockMessage" resultMap="com.boke.qcmeta.mapper.MessageMapper.messageRecord">
+    <include refid="messageSelect"/> WHERE message_id=#{messageId} FOR UPDATE
+  </select>
+
+  <update id="applyProviderResult">
+    UPDATE outbound_messages SET state=#{change.state},
+                      provider_message_id=COALESCE(NULLIF(#{change.providerId},''),provider_message_id),
+                      whatsapp_message_id=COALESCE(NULLIF(#{change.wamid},''),whatsapp_message_id),
+                      submitted_date=COALESCE(submitted_date,CURRENT_TIMESTAMP),
+                      sent_date=CASE WHEN #{change.incoming}='SENT' THEN COALESCE(sent_date,#{change.at}) ELSE sent_date END,
+                      delivered_date=CASE WHEN #{change.incoming}='DELIVERED' THEN COALESCE(delivered_date,#{change.at}) ELSE delivered_date END,
+                      read_date=CASE WHEN #{change.incoming}='READ' THEN COALESCE(read_date,#{change.at}) ELSE read_date END,
+                      failed_date=CASE WHEN #{change.incoming}='FAILED' THEN COALESCE(failed_date,#{change.at}) ELSE failed_date END,
+                      last_error_code=CASE WHEN #{change.incoming}='FAILED' THEN #{change.errorCode} ELSE last_error_code END,
+                      last_error_message=CASE WHEN #{change.incoming}='FAILED' THEN 'YCloud 明确返回失败，请按错误码核对' ELSE last_error_message END,
+                      lock_owner=NULL,lock_expire_date=NULL,message_version=message_version+1,update_date=CURRENT_TIMESTAMP
+                    WHERE message_id=#{change.messageId}
+  </update>
+
+  <select id="resolveReply" resultType="string">
+    SELECT whatsapp_message_id FROM outbound_messages
+                WHERE message_id=#{query.localId} AND business_id=#{query.businessId} AND sender_id=#{query.senderId} AND recipient_type=#{query.recipientType} AND recipient=#{query.recipient}
+ AND sender_phone=#{query.senderPhone}
+</select>
+
+  <select id="find" resultMap="com.boke.qcmeta.mapper.MessageMapper.messageRecord">
+    <include refid="messageSelect"/> WHERE message_id=#{messageId}
+  </select>
+
+  <select id="lockReadyOutbox" resultType="com.boke.qcmeta.model.StoreModels$OutboxRecord">
+    SELECT outbox_id,message_id,publish_attempts
+                    FROM mq_outbox
+                    WHERE state='NEW' AND next_publish_date&lt;=CURRENT_TIMESTAMP
+                    ORDER BY publish_priority DESC,outbox_id
+                    LIMIT #{limit}
+                    FOR UPDATE SKIP LOCKED
+  </select>
+
+  <update id="claimOutbox">
+    UPDATE mq_outbox
+                        SET state='PUBLISHING',publish_attempts=publish_attempts+1,
+                            lock_owner=#{owner},lock_expire_date=#{lockedUntil},update_date=CURRENT_TIMESTAMP
+                        WHERE state='NEW' AND outbox_id IN
+    <foreach collection="outboxIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+  </update>
+
+  <update id="publishOutbox">
+    UPDATE mq_outbox
+                SET state='PUBLISHED',published_date=CURRENT_TIMESTAMP,lock_owner=NULL,lock_expire_date=NULL,
+                    last_error=NULL,update_date=CURRENT_TIMESTAMP
+                WHERE outbox_id=#{outboxId} AND state='PUBLISHING' AND lock_owner=#{owner}
+  </update>
+
+  <update id="retryOutbox">
+    UPDATE mq_outbox
+                SET state='NEW',next_publish_date=#{change.nextTime},last_error=#{change.error},lock_owner=NULL,lock_expire_date=NULL,
+                    update_date=CURRENT_TIMESTAMP
+                WHERE outbox_id=#{change.outboxId} AND state='PUBLISHING' AND lock_owner=#{change.owner}
+  </update>
+
+  <update id="recoverOutbox">
+    UPDATE mq_outbox SET state='NEW',lock_owner=NULL,lock_expire_date=NULL,
+                    update_date=CURRENT_TIMESTAMP
+                WHERE state='PUBLISHING' AND lock_expire_date&lt;CURRENT_TIMESTAMP
+  </update>
+
+  <update id="claimMessage">
+    UPDATE outbound_messages
+                SET state='SUBMITTING',lock_owner=#{owner},lock_expire_date=#{lockedUntil},attempt_count=attempt_count+1,
+                    update_date=CURRENT_TIMESTAMP
+                WHERE message_id=#{messageId}
+                  AND state IN ('PENDING','RETRY_WAIT')
+                  AND send_date&lt;=CURRENT_TIMESTAMP
+                  AND next_attempt_date&lt;=CURRENT_TIMESTAMP
+  </update>
+
+  <select id="lockExpiredMessages" resultType="string">
+    SELECT message_id FROM outbound_messages WHERE state='SUBMITTING' AND lock_expire_date&lt;CURRENT_TIMESTAMP LIMIT 200 FOR UPDATE SKIP LOCKED
+  </select>
+
+  <insert id="insertAttempt">
+    INSERT INTO submission_attempts(
+                    attempt_id,message_id,started_date,finished_date,result,http_status,
+                    provider_request_id,error_code,error_message)
+                VALUES(#{attempt.attemptId},#{attempt.messageId},#{attempt.startedAt},#{attempt.finishedAt},#{attempt.result},#{attempt.httpStatus},NULLIF(#{attempt.providerRequestId},''),NULLIF(#{attempt.errorCode},''),NULLIF(#{attempt.errorMessage},''))
+  </insert>
+
+  <update id="failMessage">
+    UPDATE outbound_messages
+                SET state='FAILED',last_error_code=#{change.code},last_error_message=#{change.error},failed_date=#{change.at},
+                    lock_owner=NULL,lock_expire_date=NULL,message_version=message_version+1,update_date=CURRENT_TIMESTAMP
+                WHERE message_id=#{change.messageId} AND state='SUBMITTING'
+  </update>
+
+  <update id="markUnknown">
+    UPDATE outbound_messages
+                SET state='UNKNOWN',last_error_code=#{change.code},last_error_message=#{change.error},
+                    lock_owner=NULL,lock_expire_date=NULL,message_version=message_version+1,update_date=CURRENT_TIMESTAMP
+                WHERE message_id=#{change.messageId} AND state='SUBMITTING'
+  </update>
+
+  <update id="retryMessage">
+    UPDATE outbound_messages
+                    SET state='RETRY_WAIT',last_error_code=#{change.code},last_error_message=#{change.error},next_attempt_date=#{change.at},
+                        lock_owner=NULL,lock_expire_date=NULL,message_version=message_version+1,update_date=CURRENT_TIMESTAMP
+                    WHERE message_id=#{change.messageId} AND state='SUBMITTING'
+  </update>
+
+  <update id="resetOutbox">
+    UPDATE mq_outbox
+                    SET state='NEW',next_publish_date=#{nextTime},last_error=NULL,lock_owner=NULL,lock_expire_date=NULL,
+                        update_date=CURRENT_TIMESTAMP
+                    WHERE message_id=#{messageId}
+  </update>
+
+  <update id="cancelCampaign">
+    UPDATE campaigns SET state='CANCELLED',cancelled_date=CURRENT_TIMESTAMP
+                    WHERE campaign_id=#{campaignId}
+  </update>
+
+  <select id="lockCampaignMessages" resultType="string">
+    SELECT message_id FROM outbound_messages WHERE campaign_id=#{campaignId} AND state IN ('PENDING','RETRY_WAIT') ORDER BY message_id FOR UPDATE
+  </select>
+
+  <update id="cancelCampaignMessages">
+    UPDATE outbound_messages
+                    SET state='CANCELLED',message_version=message_version+1,update_date=CURRENT_TIMESTAMP
+                    WHERE campaign_id=#{campaignId} AND state IN ('PENDING','RETRY_WAIT')
+  </update>
+
+  <update id="cancelCampaignOutbox">
+    UPDATE mq_outbox SET state='CANCELLED',update_date=CURRENT_TIMESTAMP
+WHERE state IN ('NEW','PUBLISHING') AND EXISTS
+(SELECT 1 FROM outbound_messages m WHERE m.message_id=mq_outbox.message_id AND m.campaign_id=#{campaignId} AND m.state='CANCELLED')
+  </update>
+
+  <select id="countPendingOutbox" resultType="long">
+    SELECT COUNT(*) FROM mq_outbox WHERE state IN ('NEW','PUBLISHING')
+  </select>
+</mapper>

@@ -1,0 +1,3 @@
+org.springframework.boot.env.EnvironmentPostProcessor=\
+com.boke.qcmeta.config.DatabaseConfigEnvironmentPostProcessor,\
+com.boke.qcmeta.config.OssConfigEnvironmentPostProcessor

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.boke.qcmeta.mapper.EventDeliveryMapper">
+
+  <select id="lockAvailable" resultMap="com.boke.qcmeta.mapper.EventMapper.serviceEvent">
+    SELECT event_sequence,event_id,event_type,business_id,sender_id,entity_id,payload,occurred_date FROM event_outbox
+WHERE business_id=#{businessId} AND acknowledged_date IS NULL AND (lease_expire_date IS NULL OR lease_expire_date&lt;=CURRENT_TIMESTAMP) ORDER BY event_sequence LIMIT #{limit} FOR UPDATE SKIP LOCKED
+  </select>
+
+  <update id="lease">
+    UPDATE event_outbox SET lease_token=#{lease.token},consumer_id=#{lease.consumerId},lease_expire_date=#{lease.until},delivery_count=delivery_count+1 WHERE event_sequence IN
+    <foreach collection="lease.sequences" item="id" open="(" separator="," close=")">#{id}</foreach>
+  </update>
+
+  <select id="lockReceipt" resultType="long">
+    SELECT event_sequence FROM event_outbox WHERE business_id=#{receipt.businessId} AND consumer_id=#{receipt.consumerId} AND lease_token=#{receipt.token} AND event_sequence IN
+    <foreach collection="receipt.sequences" item="id" open="(" separator="," close=")">#{id}</foreach>
+    ORDER BY event_sequence FOR UPDATE
+  </select>
+
+  <update id="acknowledge">
+    UPDATE event_outbox SET acknowledged_date=CURRENT_TIMESTAMP WHERE acknowledged_date IS NULL AND event_sequence IN
+    <foreach collection="sequences" item="id" open="(" separator="," close=")">#{id}</foreach>
+  </update>
+
+  <update id="replay">
+    UPDATE event_outbox SET acknowledged_date=NULL,lease_token=NULL,consumer_id=NULL,lease_expire_date=NULL WHERE business_id=#{businessId} AND event_sequence IN
+    <foreach collection="sequences" item="id" open="(" separator="," close=")">#{id}</foreach>
+  </update>
+</mapper>

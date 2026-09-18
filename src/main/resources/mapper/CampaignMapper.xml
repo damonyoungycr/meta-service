@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.boke.qcmeta.mapper.CampaignMapper">
+  <!-- 数据库字段独立命名，显式映射以保持现有接口字段。 -->
+  <resultMap id="campaignStatistics" type="com.boke.qcmeta.model.db.CampaignRows$Statistics" autoMapping="false">
+    <constructor>
+      <arg name="campaignId" column="campaign_id" javaType="java.lang.String"/>
+      <arg name="businessId" column="business_id" javaType="java.lang.String"/>
+      <arg name="senderId" column="sender_id" javaType="java.lang.String"/>
+      <arg name="name" column="campaign_name" javaType="java.lang.String"/>
+      <arg name="state" column="state" javaType="java.lang.String"/>
+      <arg name="total" column="total" javaType="_int"/>
+      <arg name="createdAt" column="create_date" javaType="java.time.Instant"/>
+      <arg name="pending" column="pending" javaType="_int"/>
+      <arg name="submitting" column="submitting" javaType="_int"/>
+      <arg name="accepted" column="accepted" javaType="_int"/>
+      <arg name="sent" column="sent" javaType="_int"/>
+      <arg name="delivered" column="delivered" javaType="_int"/>
+      <arg name="readCount" column="read_count" javaType="_int"/>
+      <arg name="failed" column="failed" javaType="_int"/>
+      <arg name="unknownCount" column="unknown_count" javaType="_int"/>
+      <arg name="cancelled" column="cancelled" javaType="_int"/>
+    </constructor>
+  </resultMap>
+
+  <select id="fingerprint" resultType="com.boke.qcmeta.model.db.CampaignRows$Fingerprint">
+    SELECT business_id,request_fingerprint FROM campaigns WHERE campaign_id=#{campaignId}
+  </select>
+
+  <insert id="insert">
+    INSERT INTO campaigns(campaign_id,business_id,sender_id,campaign_name,state,total,request_fingerprint,source_id)
+                    VALUES(#{campaign.campaignId},#{campaign.businessId},#{campaign.senderId},#{campaign.name},'ACTIVE',#{campaign.total},#{campaign.fingerprint},#{campaign.sourceId})
+  </insert>
+
+  <select id="statistics" resultMap="com.boke.qcmeta.mapper.CampaignMapper.campaignStatistics">
+    SELECT c.campaign_id,c.business_id,c.sender_id,c.campaign_name,c.state,c.total,c.create_date,
+                  COALESCE(SUM(CASE WHEN m.state IN ('PENDING','RETRY_WAIT') THEN 1 ELSE 0 END),0) pending,
+                  COALESCE(SUM(CASE WHEN m.state='SUBMITTING' THEN 1 ELSE 0 END),0) submitting,
+                  COALESCE(SUM(CASE WHEN m.submitted_date IS NOT NULL OR m.state IN ('ACCEPTED','SENT','DELIVERED','READ') THEN 1 ELSE 0 END),0) accepted,
+                  COALESCE(SUM(CASE WHEN m.sent_date IS NOT NULL OR m.delivered_date IS NOT NULL OR m.read_date IS NOT NULL OR m.state IN ('SENT','DELIVERED','READ') THEN 1 ELSE 0 END),0) sent,
+                  COALESCE(SUM(CASE WHEN m.delivered_date IS NOT NULL OR m.read_date IS NOT NULL OR m.state IN ('DELIVERED','READ') THEN 1 ELSE 0 END),0) delivered,
+                  COALESCE(SUM(CASE WHEN m.read_date IS NOT NULL OR m.state='READ' THEN 1 ELSE 0 END),0) read_count,
+                  COALESCE(SUM(CASE WHEN m.failed_date IS NOT NULL OR m.state='FAILED' THEN 1 ELSE 0 END),0) failed,
+                  COALESCE(SUM(CASE WHEN m.state='UNKNOWN' THEN 1 ELSE 0 END),0) unknown_count,
+                  COALESCE(SUM(CASE WHEN m.state='CANCELLED' THEN 1 ELSE 0 END),0) cancelled
+                FROM campaigns c LEFT JOIN outbound_messages m ON m.campaign_id=c.campaign_id
+                WHERE c.campaign_id=#{campaignId} AND c.business_id=#{businessId}
+                GROUP BY c.campaign_id,c.business_id,c.sender_id,c.campaign_name,c.state,c.total,c.create_date
+  </select>
+
+  <select id="lock" resultType="string">
+    SELECT campaign_id FROM campaigns WHERE campaign_id=#{campaignId} AND business_id=#{businessId} FOR UPDATE
+  </select>
+</mapper>

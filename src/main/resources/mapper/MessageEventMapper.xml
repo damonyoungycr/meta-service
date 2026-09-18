@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.boke.qcmeta.mapper.MessageEventMapper">
+  <!-- 保留 JSON_OBJECT，以保持既有事件中时间字段的格式及空值语义。 -->
+  <sql id="insertColumns">
+    INSERT INTO event_outbox(event_id,event_type,business_id,sender_id,entity_id,payload,occurred_date)
+  </sql>
+  <sql id="snapshotFields">
+                'message.updated',business_id,sender_id,message_id,
+                    JSON_OBJECT('schemaVersion',1,'messageId',message_id,'version',message_version,
+                      'sendRequestId',send_request_id,'state',state,'providerMessageId',provider_message_id,
+                      'whatsappMessageId',whatsapp_message_id,'errorCode',last_error_code,
+                      'sentAt',sent_date,'deliveredAt',delivered_date,'readAt',read_date,'failedAt',failed_date),CURRENT_TIMESTAMP
+  </sql>
+  <insert id="insertSnapshot">
+    <include refid="insertColumns"/>
+    SELECT #{eventId}, <include refid="snapshotFields"/> FROM outbound_messages WHERE message_id=#{messageId}
+  </insert>
+  <insert id="insertSnapshots">
+    <include refid="insertColumns"/>
+    <foreach collection="snapshots" item="snapshot" separator=" UNION ALL ">
+      SELECT #{snapshot.eventId}, <include refid="snapshotFields"/> FROM outbound_messages WHERE message_id=#{snapshot.messageId}
+    </foreach>
+  </insert>
+</mapper>

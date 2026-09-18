@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.boke.qcmeta.mapper.EventMapper">
+  <!-- 数据库字段独立命名，显式映射以保持现有接口字段。 -->
+  <resultMap id="serviceEvent" type="com.boke.qcmeta.model.ApiModels$ServiceEvent" autoMapping="false">
+    <constructor>
+      <arg name="sequence" column="event_sequence" javaType="_long"/>
+      <arg name="eventId" column="event_id" javaType="java.lang.String"/>
+      <arg name="eventType" column="event_type" javaType="java.lang.String"/>
+      <arg name="businessId" column="business_id" javaType="java.lang.String"/>
+      <arg name="senderId" column="sender_id" javaType="java.lang.String"/>
+      <arg name="entityId" column="entity_id" javaType="java.lang.String"/>
+      <arg name="payload" column="payload" javaType="com.fasterxml.jackson.databind.JsonNode" typeHandler="com.boke.qcmeta.mapper.type.JsonNodeTypeHandler"/>
+      <arg name="occurredAt" column="occurred_date" javaType="java.time.Instant"/>
+    </constructor>
+  </resultMap>
+
+  <insert id="insertProviderEvent">
+    INSERT INTO provider_events(event_id,event_type,provider,payload,processed_date)
+                    VALUES(#{event.eventId},#{event.eventType},'YCLOUD',#{event.payload},
+                    CASE WHEN #{event.eventType}='whatsapp.message.updated' THEN NULL ELSE CURRENT_TIMESTAMP END)
+  </insert>
+
+  <update id="markProcessed">
+    UPDATE provider_events SET processed_date=CURRENT_TIMESTAMP WHERE event_id=#{eventId}
+  </update>
+
+  <select id="pendingCallbacks" resultType="com.boke.qcmeta.model.db.EventRows$Callback">
+    SELECT event_id,payload,forward_attempts AS attempts FROM provider_events
+    WHERE forwarded_date IS NULL AND next_forward_date&lt;=CURRENT_TIMESTAMP
+    ORDER BY next_forward_date,event_id LIMIT 20
+  </select>
+
+  <update id="markForwarded">
+    UPDATE provider_events SET forwarded_date=CURRENT_TIMESTAMP,forward_attempts=forward_attempts+1
+    WHERE event_id=#{eventId} AND forwarded_date IS NULL
+  </update>
+
+  <update id="deferCallback">
+    UPDATE provider_events SET next_forward_date=#{nextTime},forward_attempts=forward_attempts+1
+    WHERE event_id=#{eventId} AND forwarded_date IS NULL
+  </update>
+
+  <select id="pendingProviderEvents" resultType="string">
+    SELECT event_id FROM provider_events WHERE processed_date IS NULL AND next_process_date&lt;=CURRENT_TIMESTAMP ORDER BY next_process_date,event_id LIMIT 100
+  </select>
+
+  <select id="lockPending" resultType="com.boke.qcmeta.model.db.EventRows$Pending">
+    SELECT payload,process_attempts FROM provider_events WHERE event_id=#{eventId} AND processed_date IS NULL FOR UPDATE
+  </select>
+
+  <update id="deferProviderEvent">
+    UPDATE provider_events SET next_process_date=#{nextTime},process_attempts=process_attempts+1 WHERE event_id=#{eventId} AND processed_date IS NULL
+  </update>
+
+  <select id="findOwner" resultMap="com.boke.qcmeta.mapper.MessageMapper.messageRecord">
+    <include refid="com.boke.qcmeta.mapper.MessageMapper.messageSelect"/>
+    <where><choose>
+      <when test="key == 'message_id'">message_id=#{value}</when>
+      <when test="key == 'provider_message_id'">provider_message_id=#{value}</when>
+      <when test="key == 'whatsapp_message_id'">whatsapp_message_id=#{value}</when>
+      <otherwise>1=0</otherwise>
+    </choose></where> LIMIT 1
+  </select>
+
+  <select id="list" resultMap="com.boke.qcmeta.mapper.EventMapper.serviceEvent">
+    SELECT event_sequence,event_id,event_type,business_id,sender_id,entity_id,payload,occurred_date
+                FROM event_outbox
+                WHERE acknowledged_date IS NULL AND business_id=#{businessId} AND event_sequence>#{afterSequence}
+                ORDER BY event_sequence LIMIT #{limit}
+  </select>
+
+  <select id="countPending" resultType="long">
+    SELECT COUNT(*) FROM event_outbox WHERE acknowledged_date IS NULL
+  </select>
+
+  <delete id="deleteAcknowledged">
+    DELETE FROM event_outbox
+                    WHERE acknowledged_date IS NOT NULL AND occurred_date&lt;#{before}
+  </delete>
+</mapper>

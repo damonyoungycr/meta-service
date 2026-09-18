@@ -1,0 +1,84 @@
+spring:
+  datasource:
+    hikari:
+      connection-init-sql: "SET time_zone = '+00:00'"
+  profiles:
+    default: dev
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 101MB
+  application:
+    name: qc-meta-service-spring
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  threads:
+    virtual:
+      enabled: true
+  main:
+    keep-alive: true
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-handlers-package: com.boke.qcmeta.mapper.type
+  configuration:
+    map-underscore-to-camel-case: true
+    arg-name-based-constructor-auto-mapping: true
+    local-cache-scope: STATEMENT
+    cache-enabled: false
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+server:
+  port: 8910
+  shutdown: graceful
+  max-http-request-header-size: 16KB
+
+management:
+  endpoints:
+    web:
+      base-path: /
+      exposure:
+        include: health,prometheus
+      path-mapping:
+        health: actuator-health
+        prometheus: metrics
+  endpoint:
+    health:
+      show-details: never
+  metrics:
+    tags:
+      application: qc-meta-service-spring
+
+# 固定运行参数，修改后重启生效；退订和黑名单由 boke-kefu 提交前判断。
+message:
+  worker-count: 4
+  sender-rate: 10
+  poll-interval: 500ms
+  claim-timeout: 2m
+  max-safe-retries: 5
+
+webhook:
+  signature-tolerance: 5m
+  max-body-bytes: 2097152
+
+events:
+  # 只清理已确认的下游事件，未确认事件和原始去重记录继续保留。
+  retention-days: 30
+
+downstream:
+  # 填写 boke-kefu 的实际接收地址；下游持久化成功后返回 2xx，并按事件 id 去重。
+  callback-url: ""
+  request-timeout: 5s
+
+qc:
+  grpc-port: 8920
+  shutdown-timeout: 15s
+
+logging:
+  level:
+    root: INFO
+    com.boke.qcmeta: INFO
+    org.apache.kafka: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} level=%-5level logger=%logger{36} message=%msg%n"

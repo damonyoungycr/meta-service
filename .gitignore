@@ -1,0 +1,25 @@
+target/
+.idea/
+*.iml
+.env
+.env.*
+# 本地运行记录、下载缓存和文档生成中间产物不进入代码仓库。
+.tech/
+docs/feishu/
+docs/contracts-*.proto.txt
+docs/config-assets.yml
+docs/api-core-extra.md
+docs/postman/validation-structure.json
+*.log
+*.cla
+!src/main/resources/dev/oss.cla
+!src/main/resources/beta/oss.cla
+*.local.properties
+.tech/validation/kafka-host-client/
+.tech/sockets/
+
+.tech/validation/kafka26-host-client/
+.tech/validation/kafka263-download/
+deployment/*
+/docs/*
+/scripts/*

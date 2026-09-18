@@ -1,0 +1,20 @@
+spring:
+  datasource:
+    file-name: beta/database-config.properties
+
+oss:
+  file-name: beta/oss.cla
+
+qc:
+  kafka:
+    enabled: true
+    bootstrap-servers: ""
+    topic: qckefu_meta_message_send_beta_v1
+    producer-client-id: qc-meta-producer-beta
+    consumer-group: qc-meta-sender-beta
+    concurrency: 4
+ycloud:
+  base-url: https://api.ycloud.com
+  api-key: ""
+  webhook-secret: ""
+  request-timeout: 15s

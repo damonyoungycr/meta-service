@@ -1,0 +1,26 @@
+# 开发约定
+
+- 使用 JDK 21 和 Spring Boot，业务代码优先使用 Java 21 自带能力，避免为了少量代码增加依赖。
+- 这个服务只对接 YCloud，不提前建设多供应商框架。
+- 当前服务仅做 YCloud 中转。号码与业务归属、配置保存、退订判断、客户会话、联系入口和业务报表由 boke-kefu 管理；发送请求携带实际 senderPhone，平台资料按需实时查询，不保存本地绑定或资源镜像。
+- YCloud Webhook 验签落库后向公共 application.yml 的 downstream.callback-url 推送完整事件 JSON；复用 provider_events 保存推送进度，失败退避重试。boke-kefu 按事件 id 去重，持久化成功后返回 2xx。
+- 服务间的新接口优先写进 `src/main/proto/qc/meta/v1/meta.proto`，由 Maven 在编译时生成 Java 代码。
+- YCloud API Key、Webhook Secret、OSS 凭据和客户消息正文不能写进日志。
+- 服务仅部署在可信内网，HTTP/gRPC 不增加 Token 鉴权；保留业务归属校验和 YCloud 原始请求体验签。
+- OSS 始终启用，从 `oss.cla` 读取配置；数据库敏感配置统一使用兼容旧服务的 `ClaUtil`，不配置外部主密钥。
+- 环境只选 dev、beta、dx、prod 中的一个；dev、beta 的数据库和 OSS 配置分别放在 src/main/resources/dev、src/main/resources/beta，随项目管理；只有 dx、prod 使用项目外的 init.cla、oss.cla，不另建 config 目录。
+- 配置文件直接填写实际值，不使用环境变量占位符；未提供的环境连接信息留空，部署前填写，不复用其他环境的连接信息。
+- YCloud 地址、API Key、Webhook Secret 和请求超时统一在公共 application.yml 中明文配置，所有环境共用，不写入数据库或 CLA 文件；修改后重启生效，日志仍不得输出凭据。
+- 发送前必须先把消息和 MQ 待办记录写入同一个 MySQL 事务。
+- 数据库访问统一使用 MyBatis Mapper 接口和同名 XML；业务 Java 中不拼 SQL。多字段参数和结果使用类型化对象，SQL 使用命名绑定，禁止直接拼接外部字段名或排序条件。
+- 优先使用通用 SQL，公共字段、筛选条件和统计口径在 Mapper XML 中复用；必要的 MySQL 特有语法集中保留并说明原因。数据库结构差异仍由人工处理，不引入自动建表或迁移。
+- 当前各环境从空库初始化，只维护 `deployment/sql/init.sql`；本地旧库可重建，不保留废弃版本、旧库清理或队列迁移脚本。正式环境投入使用后，再按真实变更处理数据升级。
+- 数据库脚本使用普通 SQL，不使用存储过程或外键；保留主键、唯一索引及必要查询索引，表间一致性由应用校验和事务维护。表和字段使用中文 COMMENT 说明名称及用途。
+- 数据库时间字段统一使用 `_date` 后缀，创建/更新时间使用 `create_date`、`update_date`；时间类型使用不带精度的 `DATETIME`。无默认值的非主键字段允许 NULL，主键保留非空。列名不使用 `name`、`version`、`content`、`priority`、`sequence`，应添加业务含义前缀；数据库重命名通过 Mapper 显式映射保持接口兼容。
+- 字符串列不使用 `CHAR`；有长度上限的字符串使用 `VARCHAR`，包括 UUID、请求指纹和领取凭证，长文本继续使用 `TEXT`。
+- 拿不到 YCloud 明确响应时把消息标记为 `UNKNOWN`，不能自动重发，以免客户收到重复消息。
+- Webhook 必须使用原始请求体验签，并在数据库事务成功后再返回 2xx。
+- 注释用简单中文说明原因和出错影响；代码已经表达清楚的内容不重复解释。
+- 保持单体服务和直接依赖。出现真实的第二个供应商或第二种存储后，再考虑抽象接口。
+- 每个环境只部署一个服务实例（一个 JVM 进程），当前不考虑多节点、多实例或水平扩容；设计和实现以单实例为前提，不为假设中的多节点场景增加机制。保留单实例并发、重启恢复和消息防重所需的保障。
+- 不保留 example 配置文件和单元测试类；提交前运行 `mvn -B -ntp clean package` 完成编译打包检查，数据库或 Kafka 链路有改动时再用 `docker compose up -d --build` 做启动检查。
